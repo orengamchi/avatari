@@ -1,0 +1,1489 @@
+<!DOCTYPE html>
+<html lang="he" dir="rtl">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>AVATARi</title>
+    <!-- טעינת Tailwind CSS לעיצוב הממשק -->
+    <script src="https://cdn.tailwindcss.com"></script>
+    <!-- הגדרת גופן Inter -->
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet">
+    <!-- SortableJS for drag-and-drop lists -->
+    <script src="https://cdn.jsdelivr.net/npm/sortablejs@1.15.0/Sortable.min.js"></script>
+    <style>
+        body {
+            font-family: 'Inter', sans-serif;
+            overflow: hidden;
+            user-select: none; /* Prevent text selection during drag */
+        }
+        #model-input, #animation-input, #load-state-input { display: none; }
+        .loader {
+            border: 5px solid #f3f3f3;
+            border-top: 5px solid #3498db;
+            border-radius: 50%;
+            width: 50px;
+            height: 50px;
+            animation: spin 1s linear infinite;
+        }
+        @keyframes spin { 0% { transform: rotate(0deg); } 100% { transform: rotate(360deg); } }
+        /* Style for scrollbars */
+        .custom-scrollbar::-webkit-scrollbar { width: 8px; }
+        .custom-scrollbar::-webkit-scrollbar-track { background: #1f2937; }
+        .custom-scrollbar::-webkit-scrollbar-thumb { background: #4b5563; border-radius: 4px; }
+        .custom-scrollbar::-webkit-scrollbar-thumb:hover { background: #6b7280; }
+        
+        /* Fullscreen canvas container */
+        #container {
+            position: absolute;
+            top: 3.5rem; /* Height of top bar */
+            left: 0; 
+            right: 0; 
+            bottom: 0;
+        }
+        
+        /* Floating panels */
+        .floating-panel {
+            position: absolute;
+            z-index: 10;
+            background-color: rgba(31, 41, 55, 0.85); /* bg-gray-800 bg-opacity-85 */
+            backdrop-filter: blur(8px);
+            border: 1px solid rgba(75, 85, 99, 0.5); /* border-gray-600/50 */
+            border-radius: 0.5rem; /* rounded-lg */
+            box-shadow: 0 10px 15px -3px rgba(0, 0, 0, 0.2), 0 4px 6px -2px rgba(0, 0, 0, 0.1); /* shadow-xl */
+            display: flex;
+            flex-direction: column;
+        }
+        .panel-header {
+            cursor: move;
+            padding: 0.75rem 1rem;
+            background-color: rgba(55, 65, 81, 0.5); /* bg-gray-700/50 */
+            border-bottom: 1px solid rgba(75, 85, 99, 0.5); /* border-gray-600/50 */
+        }
+        
+        /* Style for SortableJS dragging */
+        .sortable-ghost {
+            background-color: #4a5568;
+            opacity: 0.7;
+        }
+        .drag-handle {
+            cursor: move;
+            cursor: grab;
+        }
+        .drag-handle:active {
+            cursor: grabbing;
+        }
+        /* Recording indicator */
+        .recording-indicator {
+            width: 10px;
+            height: 10px;
+            background-color: red;
+            border-radius: 50%;
+            animation: pulse 1.5s infinite;
+        }
+        @keyframes pulse {
+            0% { box-shadow: 0 0 0 0 rgba(255, 0, 0, 0.7); }
+            70% { box-shadow: 0 0 0 10px rgba(255, 0, 0, 0); }
+            100% { box-shadow: 0 0 0 0 rgba(255, 0, 0, 0); }
+        }
+        .anim-list-item:hover .delete-btn {
+            opacity: 1;
+        }
+        .model-list-item:hover .visibility-toggle {
+            opacity: 1;
+        }
+        input[type="color"] {
+            -webkit-appearance: none;
+            border: none;
+            width: 40px;
+            height: 32px;
+        }
+        input[type="color"]::-webkit-color-swatch-wrapper {
+            padding: 0;
+        }
+        input[type="color"]::-webkit-color-swatch {
+            border: 1px solid #4b5563;
+            border-radius: 0.25rem;
+        }
+    </style>
+</head>
+<body class="bg-gray-900 text-white m-0 p-0">
+    <!-- Top bar UI -->
+    <header id="top-bar" class="absolute top-0 left-0 right-0 bg-gray-800 bg-opacity-90 backdrop-blur-sm z-20 shadow-lg flex items-center px-4 h-14">
+        <h1 class="text-xl font-bold text-cyan-400 ml-4">AVATARi</h1>
+        <div class="flex items-center space-x-2 space-x-reverse border-r border-gray-600 pr-4 mr-4">
+            <label for="model-input" class="px-3 py-2 rounded-md text-sm font-medium text-gray-300 hover:bg-cyan-600 hover:text-white transition-colors cursor-pointer">הוסף מודל</label>
+            <label for="animation-input" class="px-3 py-2 rounded-md text-sm font-medium text-gray-300 hover:bg-teal-600 hover:text-white transition-colors cursor-pointer">הוסף אנימציה</label>
+            
+            <div class="relative" id="presets-dropdown-container">
+                <button id="presets-dropdown-btn" class="px-3 py-2 rounded-md text-sm font-medium text-gray-300 hover:bg-green-600 hover:text-white transition-colors">טען פריסט אנימציה</button>
+                <div id="presets-dropdown-menu" class="hidden absolute left-0 mt-2 w-48 rounded-md shadow-lg bg-gray-700 ring-1 ring-black ring-opacity-5 z-30">
+                    <div class="py-1" role="menu" aria-orientation="vertical" aria-labelledby="options-menu">
+                        <a href="#" id="load-walk-preset-btn" class="block px-4 py-2 text-sm text-gray-200 hover:bg-gray-600" role="menuitem">הליכה</a>
+                        <a href="#" id="load-running-preset-btn" class="block px-4 py-2 text-sm text-gray-200 hover:bg-gray-600" role="menuitem">ריצה</a>
+                        <a href="#" id="load-thriller-idle-btn" class="block px-4 py-2 text-sm text-gray-200 hover:bg-gray-600" role="menuitem">Thriller Idle</a>
+                        <a href="#" id="load-thriller-1-btn" class="block px-4 py-2 text-sm text-gray-200 hover:bg-gray-600" role="menuitem">Thriller Part 1</a>
+                        <a href="#" id="load-thriller-2-btn" class="block px-4 py-2 text-sm text-gray-200 hover:bg-gray-600" role="menuitem">Thriller Part 2</a>
+                        <a href="#" id="load-thriller-3-btn" class="block px-4 py-2 text-sm text-gray-200 hover:bg-gray-600" role="menuitem">Thriller Part 3</a>
+                        <a href="#" id="load-thriller-4-btn" class="block px-4 py-2 text-sm text-gray-200 hover:bg-gray-600" role="menuitem">Thriller Part 4</a>
+                    </div>
+                </div>
+            </div>
+        </div>
+        <div class="flex items-center space-x-2 space-x-reverse">
+             <button id="save-state-btn" class="px-3 py-2 rounded-md text-sm font-medium text-gray-300 hover:bg-indigo-600 hover:text-white transition-colors">שמור מצב</button>
+             <label for="load-state-input" class="px-3 py-2 rounded-md text-sm font-medium text-gray-300 hover:bg-purple-600 hover:text-white transition-colors cursor-pointer">טען מצב</label>
+             <button id="reset-state-btn" class="px-3 py-2 rounded-md text-sm font-medium text-gray-300 hover:bg-orange-600 hover:text-white transition-colors">איפוס מצב</button>
+        </div>
+        <div class="flex items-center space-x-2 space-x-reverse border-r border-gray-600 pr-4 mr-4">
+             <div class="relative" id="hem-dropdown-container">
+                <button id="hem-dropdown-btn" class="px-3 py-2 rounded-md text-sm font-medium text-gray-300 hover:bg-pink-600 hover:text-white transition-colors">הם</button>
+                <div id="hem-dropdown-menu" class="hidden absolute left-0 mt-2 w-48 rounded-md shadow-lg bg-gray-700 ring-1 ring-black ring-opacity-5 z-30">
+                    <div class="py-1" role="menu" aria-orientation="vertical">
+                         <a href="#" id="load-deri-btn" class="block px-4 py-2 text-sm text-gray-200 hover:bg-gray-600" role="menuitem">Deri</a>
+                         <a href="#" id="load-amsalem-btn" class="block px-4 py-2 text-sm text-gray-200 hover:bg-gray-600" role="menuitem">Amsalem</a>
+                         <a href="#" id="load-yair-n-btn" class="block px-4 py-2 text-sm text-gray-200 hover:bg-gray-600" role="menuitem">Yair N</a>
+                    </div>
+                </div>
+            </div>
+            <div class="relative" id="anahnu-dropdown-container">
+                <button id="anahnu-dropdown-btn" class="px-3 py-2 rounded-md text-sm font-medium text-gray-300 hover:bg-rose-600 hover:text-white transition-colors">אנחנו</button>
+                <div id="anahnu-dropdown-menu" class="hidden absolute left-0 mt-2 w-48 rounded-md shadow-lg bg-gray-700 ring-1 ring-black ring-opacity-5 z-30">
+                    <div class="py-1" role="menu" aria-orientation="vertical">
+                        <a href="#" id="load-kiss-t-pose-btn" class="block px-4 py-2 text-sm text-gray-200 hover:bg-gray-600" role="menuitem">Kiss T-Pose</a>
+                        <a href="#" id="load-tal-btn" class="block px-4 py-2 text-sm text-gray-200 hover:bg-gray-600" role="menuitem">Tal</a>
+                        <a href="#" id="load-shani-btn" class="block px-4 py-2 text-sm text-gray-200 hover:bg-gray-600" role="menuitem">Shani</a>
+                        <a href="#" id="load-muli-btn" class="block px-4 py-2 text-sm text-gray-200 hover:bg-gray-600" role="menuitem">Muli</a>
+                        <a href="#" id="load-liat-btn" class="block px-4 py-2 text-sm text-gray-200 hover:bg-gray-600" role="menuitem">Liat</a>
+                        <a href="#" id="load-eran-btn" class="block px-4 py-2 text-sm text-gray-200 hover:bg-gray-600" role="menuitem">Eran</a>
+                        <a href="#" id="load-eli-btn" class="block px-4 py-2 text-sm text-gray-200 hover:bg-gray-600" role="menuitem">Eli</a>
+                        <a href="#" id="load-asi-btn" class="block px-4 py-2 text-sm text-gray-200 hover:bg-gray-600" role="menuitem">Asi</a>
+                        <a href="#" id="load-alma-btn" class="block px-4 py-2 text-sm text-gray-200 hover:bg-gray-600" role="menuitem">Alma</a>
+                    </div>
+                </div>
+            </div>
+        </div>
+        <div class="flex items-center space-x-2 space-x-reverse border-r border-gray-600 pr-4 mr-4">
+            <button id="export-video-btn" class="px-3 py-2 rounded-md text-sm font-medium text-gray-300 hover:bg-red-600 hover:text-white transition-colors flex items-center space-x-2 space-x-reverse">
+                <span id="export-video-text">ייצא וידאו</span>
+            </button>
+            <button id="toggle-grid-btn" title="הסתר/הצג רשת" class="px-3 py-2 rounded-md text-sm font-medium text-gray-300 hover:bg-gray-600 hover:text-white transition-colors">
+                <svg xmlns="http://www.w3.org/2000/svg" class="h-5 w-5" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 6a2 2 0 012-2h12a2 2 0 012 2v12a2 2 0 01-2 2H6a2 2 0 01-2-2V6zM10 4v16m4-16v16M4 10h16M4 14h16"/></svg>
+            </button>
+        </div>
+        <div id="status-message" class="text-center text-sm text-gray-300 mr-auto"></div>
+    </header>
+    
+    <!-- Main Canvas Container -->
+    <div id="container"></div>
+    <div id="rotation-display" class="hidden absolute bg-gray-900 bg-opacity-75 text-white text-xs px-2 py-1 rounded-md pointer-events-none -translate-x-1/2 -translate-y-1/2"></div>
+
+
+    <!-- Floating Panels -->
+    <div id="models-panel" class="floating-panel w-64 h-auto" style="top: 5rem; left: 1rem;">
+        <div class="panel-header">
+             <h2 class="text-lg font-semibold text-cyan-300">מודלים ועריכה</h2>
+        </div>
+        <div class="p-4 flex-grow flex flex-col space-y-4 overflow-y-auto custom-scrollbar max-h-[70vh]">
+            <div>
+                 <h3 class="text-md font-semibold text-purple-300 border-b border-gray-700 pb-1 mb-2">הגדרות סצנה</h3>
+                 <div class="flex items-center justify-between">
+                     <label for="bg-color-input" class="text-sm text-gray-300">צבע רקע</label>
+                     <input type="color" id="bg-color-input" value="#111827" class="p-1 bg-gray-700 border border-gray-600 rounded cursor-pointer">
+                 </div>
+            </div>
+            <div>
+                <h3 class="text-md font-semibold border-b border-gray-700 pb-2 mb-2 mt-2">מודלים בסצנה</h3>
+                <div id="model-list" class="max-h-64 overflow-y-auto custom-scrollbar space-y-1 pr-1">
+                    <p class="text-gray-400 text-sm px-2">עדיין לא נטענו מודלים.</p>
+                </div>
+            </div>
+            <div id="selection-controls-ui" class="hidden flex-grow flex flex-col">
+                <h3 class="text-md font-semibold text-yellow-300 border-b border-gray-700 pb-1 mb-2">כלי עריכה</h3>
+                <div class="grid grid-cols-3 gap-2">
+                    <button id="translate-btn" class="transform-mode-btn bg-yellow-600 p-2 rounded text-white font-semibold text-sm">הזזה</button>
+                    <button id="rotate-btn" class="transform-mode-btn bg-gray-700 hover:bg-yellow-800 p-2 rounded text-white font-semibold text-sm">סיבוב</button>
+                    <button id="scale-btn" class="transform-mode-btn bg-gray-700 hover:bg-yellow-800 p-2 rounded text-white font-semibold text-sm">סקייל</button>
+                </div>
+                <div class="mt-2">
+                    <label for="space-toggle-checkbox" class="text-sm text-gray-300 flex items-center justify-center cursor-pointer">
+                        <input type="checkbox" id="space-toggle-checkbox" class="hidden">
+                        <span id="space-toggle-label" class="px-3 py-1 text-xs text-white bg-gray-600 rounded w-full text-center">מצב: עולם</span>
+                    </label>
+                </div>
+                <div class="mt-4">
+                    <h3 class="text-md font-semibold text-teal-300 border-b border-gray-700 pb-1 mb-2">שליטת אנימציה</h3>
+                    <div class="flex items-center justify-between bg-gray-900/50 p-2 rounded-md">
+                        <button id="prev-anim-btn" title="אנימציה קודמת" class="px-3 py-1 text-lg font-bold text-white bg-gray-600 hover:bg-teal-700 rounded transition-colors">&lt;</button>
+                        <span id="current-anim-name" class="text-xs text-center text-gray-300 truncate w-32 mx-2" title="שם האנימציה הפעילה">אין אנימציה</span>
+                        <button id="next-anim-btn" title="אנימציה הבאה" class="px-3 py-1 text-lg font-bold text-white bg-gray-600 hover:bg-teal-700 rounded transition-colors">&gt;</button>
+                    </div>
+                </div>
+                <p class="text-xs text-gray-400 pt-2 mt-auto text-center border-t border-gray-600">DEL: מחיקה<br>Z: מיקוד<br>Ctrl+Z: בטל</p>
+            </div>
+        </div>
+    </div>
+    
+    <div id="animations-panel" class="floating-panel w-64 h-auto max-h-[70vh]" style="top: 5rem; right: 1rem;">
+         <div class="panel-header flex justify-between items-center">
+             <h2 class="text-lg font-semibold text-green-300">קבצי אנימציה</h2>
+             <div class="space-x-2 space-x-reverse">
+                 <button id="play-sequence-btn" title="הפעל רצף" class="px-2 text-gray-300 hover:text-white transition-colors text-lg">▶</button>
+                 <button id="stop-sequence-btn" title="עצור רצף" class="px-2 text-gray-300 hover:text-white transition-colors text-lg hidden">⏹</button>
+             </div>
+        </div>
+        <div class="p-4 flex-grow flex flex-col overflow-y-auto custom-scrollbar">
+            <div id="animation-file-list" class="flex-grow overflow-y-auto custom-scrollbar space-y-1 pr-1">
+                 <p class="text-gray-400 text-sm px-2">טען קבצי אנימציה.</p>
+            </div>
+            <p class="text-xs text-gray-400 mt-2 text-center flex-shrink-0">לחץ-כפול להפעלה, גרור לסידור הרצף</p>
+        </div>
+    </div>
+    
+    <!-- Video Export Floating Panel -->
+    <div id="video-panel" class="floating-panel w-72 hidden" style="top: 15rem; left: calc(50% - 9rem);">
+        <div class="panel-header flex justify-between items-center">
+            <h2 class="text-lg font-semibold text-red-400 flex items-center">
+                <span id="modal-title">הקלטת וידאו</span>
+                <div id="modal-recording-indicator" class="hidden recording-indicator mr-3"></div>
+            </h2>
+            <button id="close-video-panel-btn" class="text-gray-400 hover:text-white text-2xl leading-none">&times;</button>
+        </div>
+        <div class="p-4 space-y-4">
+             <p class="text-sm text-gray-300">ההקלטה תהיה ברזולוציית חלון העבודה הנוכחי.</p>
+            <div>
+                <label for="video-bitrate" class="block text-sm font-medium text-gray-300">איכות (Bitrate)</label>
+                <select id="video-bitrate" class="mt-1 block w-full bg-gray-800 border-gray-600 rounded-md shadow-sm text-white focus:ring-cyan-500 focus:border-cyan-500">
+                    <option value="2500000">נמוכה</option>
+                    <option value="5000000" selected>בינונית</option>
+                    <option value="10000000">גבוהה</option>
+                    <option value="25000000">מקסימלית</option>
+                </select>
+            </div>
+            <div>
+                <label for="video-format" class="block text-sm font-medium text-gray-300">פורמט</label>
+                <select id="video-format" class="mt-1 block w-full bg-gray-800 border-gray-600 rounded-md shadow-sm text-white focus:ring-cyan-500 focus:border-cyan-500">
+                    <option value="video/webm">WebM</option>
+                    <option value="video/webm;codecs=vp9">WebM (VP9)</option>
+                </select>
+            </div>
+            <button id="toggle-record-btn" class="w-full px-4 py-2 bg-red-600 rounded-md hover:bg-red-700">התחל הקלטה</button>
+        </div>
+    </div>
+
+
+    <!-- Hidden file inputs -->
+    <input type="file" id="model-input" accept=".glb,.gltf,.fbx" multiple>
+    <input type="file" id="animation-input" accept=".glb,.gltf,.fbx" multiple>
+    <input type="file" id="load-state-input" accept=".json">
+    
+    <!-- Loading Overlay -->
+    <div id="loading-overlay" class="hidden absolute inset-0 bg-gray-900 bg-opacity-75 flex-col justify-center items-center z-50">
+        <div class="loader"></div>
+        <p id="loading-text" class="mt-4 text-white"></p>
+    </div>
+
+    <script type="importmap">
+    { "imports": { "three": "https://cdn.jsdelivr.net/npm/three@0.164.1/build/three.module.js", "three/addons/": "https://cdn.jsdelivr.net/npm/three@0.164.1/examples/jsm/" } }
+    </script>
+
+    <script type="module">
+        import * as THREE from 'three';
+        import { OrbitControls } from 'three/addons/controls/OrbitControls.js';
+        import { GLTFLoader } from 'three/addons/loaders/GLTFLoader.js';
+        import { FBXLoader } from 'three/addons/loaders/FBXLoader.js';
+        import { TransformControls } from 'three/addons/controls/TransformControls.js';
+
+        let scene, camera, renderer, controls, clock, transformControls;
+        let shadowFloor, gridPlane;
+        const models = [];
+        const animations = new Map();
+        const animationFileNames = [];
+        
+        let activeModel = null;
+        const selectedModels = new Set();
+
+        let modelCounter = 0;
+        let activeAnimationFile = null;
+        
+        let isSequencePlaying = false;
+        let sequenceQueue = [];
+        let currentSequenceIndex = 0;
+        
+        const raycaster = new THREE.Raycaster();
+        const mouse = new THREE.Vector2();
+
+        let isRecording = false;
+        let mediaRecorder;
+        let recordedChunks = [];
+        
+        const historyStack = [];
+        const MAX_HISTORY = 10;
+
+        const container = document.getElementById('container');
+        const modelInput = document.getElementById('model-input');
+        const animationInput = document.getElementById('animation-input');
+        const saveStateBtn = document.getElementById('save-state-btn');
+        const loadStateInput = document.getElementById('load-state-input');
+        const statusMessage = document.getElementById('status-message');
+        const loadingOverlay = document.getElementById('loading-overlay');
+        const loadingText = document.getElementById('loading-text');
+        const modelListContainer = document.getElementById('model-list');
+        const animationFileListContainer = document.getElementById('animation-file-list');
+        const selectionControlsUI = document.getElementById('selection-controls-ui');
+        const videoPanel = document.getElementById('video-panel');
+        const rotationDisplay = document.getElementById('rotation-display');
+
+        function init() {
+            scene = new THREE.Scene();
+            scene.background = new THREE.Color(0x111827);
+            clock = new THREE.Clock();
+
+            camera = new THREE.PerspectiveCamera(75, container.clientWidth / container.clientHeight, 0.1, 2000);
+            camera.position.set(5, 5, 10);
+
+            const ambientLight = new THREE.AmbientLight(0xffffff, 1.5);
+            scene.add(ambientLight);
+            const directionalLight = new THREE.DirectionalLight(0xffffff, 2.5);
+            directionalLight.position.set(5, 10, 7.5);
+            directionalLight.castShadow = true;
+            directionalLight.shadow.mapSize.width = 2048;
+            directionalLight.shadow.mapSize.height = 2048;
+            scene.add(directionalLight);
+            
+            shadowFloor = new THREE.Mesh(
+                new THREE.PlaneGeometry(500, 500),
+                new THREE.ShadowMaterial({ opacity: 0.5 })
+            );
+            shadowFloor.rotation.x = -Math.PI / 2;
+            shadowFloor.position.y = 0; // החזרת רצפת הצל לגובה 0
+            shadowFloor.receiveShadow = true;
+            scene.add(shadowFloor);
+
+            const gridVertexShader = `
+                varying vec3 vWorldPosition;
+                void main() {
+                    vec4 worldPosition = modelMatrix * vec4(position, 1.0);
+                    vWorldPosition = worldPosition.xyz;
+                    gl_Position = projectionMatrix * viewMatrix * worldPosition;
+                }
+            `;
+            const gridFragmentShader = `
+                varying vec3 vWorldPosition;
+                uniform float uSize1;
+                uniform float uSize2;
+                uniform float uTime;
+                uniform float uFadeRadius;
+
+                float getGrid(float size) {
+                    vec2 r = vWorldPosition.xz / size;
+                    vec2 grid = abs(fract(r - 0.5) - 0.5) / fwidth(r);
+                    float line = min(grid.x, grid.y);
+                    return 1.0 - min(line, 1.0);
+                }
+
+                void main() {
+                    float d = length(vWorldPosition.xz);
+                    float g1 = getGrid(uSize1);
+                    float g2 = getGrid(uSize2);
+                    
+                    float fade = 1.0 - smoothstep(uFadeRadius, uFadeRadius * 1.5, d);
+                    
+                    vec3 color = vec3(0.3, 0.5, 0.7); // צבע סטטי
+                    
+                    float gridVal = max(g1 * 0.5, g2);
+
+                    gl_FragColor = vec4(color, gridVal * fade);
+                    gl_FragColor.a = min(gl_FragColor.a, 1.0);
+                }
+            `;
+            const gridMaterial = new THREE.ShaderMaterial({
+                vertexShader: gridVertexShader,
+                fragmentShader: gridFragmentShader,
+                uniforms: {
+                    uSize1: { value: 0.5 },
+                    uSize2: { value: 10.0 },
+                    uTime: { value: 0.0 },
+                    uFadeRadius: { value: 3.0 } // רדיוס הגריד הוקטן ל-3
+                },
+                transparent: true,
+                side: THREE.DoubleSide,
+                depthWrite: false
+            });
+
+            gridPlane = new THREE.Mesh(
+                new THREE.PlaneGeometry(2000, 2000),
+                gridMaterial
+            );
+            gridPlane.rotation.x = -Math.PI / 2;
+            gridPlane.position.y = -0.001; // מיקום הגריד מעט מתחת לרצפה כדי שיוצג מעליה
+            scene.add(gridPlane);
+
+
+            renderer = new THREE.WebGLRenderer({ antialias: true, preserveDrawingBuffer: true, logarithmicDepthBuffer: true });
+            renderer.setSize(container.clientWidth, container.clientHeight);
+            renderer.setPixelRatio(window.devicePixelRatio);
+            renderer.shadowMap.enabled = true;
+            container.appendChild(renderer.domElement);
+
+            controls = new OrbitControls(camera, renderer.domElement);
+            controls.enableDamping = true;
+            controls.minDistance = 0.1;
+            controls.maxDistance = 500;
+
+            transformControls = new TransformControls(camera, renderer.domElement);
+            scene.add(transformControls);
+            
+            initUI();
+            loadDefaultModel();
+            animate();
+        }
+
+        function initUI() {
+            document.getElementById('translate-btn').addEventListener('click', () => setTransformMode('translate'));
+            document.getElementById('rotate-btn').addEventListener('click', () => setTransformMode('rotate'));
+            document.getElementById('scale-btn').addEventListener('click', () => setTransformMode('scale'));
+            document.getElementById('prev-anim-btn').addEventListener('click', () => skipAnimation(-1));
+            document.getElementById('next-anim-btn').addEventListener('click', () => skipAnimation(1));
+            document.getElementById('bg-color-input').addEventListener('input', changeBackgroundColor);
+            
+            const spaceToggle = document.getElementById('space-toggle-checkbox');
+            spaceToggle.addEventListener('change', (e) => {
+                const isLocal = e.target.checked;
+                transformControls.setSpace(isLocal ? 'local' : 'world');
+                document.getElementById('space-toggle-label').textContent = isLocal ? 'מצב: לוקאלי' : 'מצב: עולם';
+            });
+            
+            transformControls.addEventListener('dragging-changed', event => {
+                controls.enabled = !event.value;
+                if (event.value === true) {
+                    selectedModels.forEach(m => {
+                        m.object3D.userData.initial = {
+                            position: m.object3D.position.clone(),
+                            quaternion: m.object3D.quaternion.clone(),
+                            scale: m.object3D.scale.clone()
+                        };
+                    });
+                } else { // Drag End
+                    if (selectedModels.size === 0 || !activeModel) return;
+
+                    const initial = activeModel.object3D.userData.initial;
+                    if (!initial || (activeModel.object3D.position.equals(initial.position) && activeModel.object3D.quaternion.equals(initial.quaternion) && activeModel.object3D.scale.equals(initial.scale))) {
+                        return;
+                    }
+                    const action = { type: 'transform', objects: [] };
+                    selectedModels.forEach(m => {
+                        if (m.object3D.userData.initial) {
+                            action.objects.push({
+                                uuid: m.object3D.uuid,
+                                before: m.object3D.userData.initial,
+                                after: {
+                                    position: m.object3D.position.clone(),
+                                    quaternion: m.object3D.quaternion.clone(),
+                                    scale: m.object3D.scale.clone()
+                                }
+                            });
+                            delete m.object3D.userData.initial;
+                        }
+                    });
+                    if (action.objects.length > 0) {
+                        historyStack.push(action);
+                        if (historyStack.length > MAX_HISTORY) historyStack.shift();
+                    }
+                }
+                
+                if (transformControls.mode === 'rotate' && event.value === true) {
+                    rotationDisplay.classList.remove('hidden');
+                } else {
+                    rotationDisplay.classList.add('hidden');
+                }
+            });
+            transformControls.addEventListener('change', onTransform);
+
+            window.addEventListener('resize', onWindowResize);
+            renderer.domElement.addEventListener('dblclick', onDoubleClick);
+            window.addEventListener('keydown', onKeyDown);
+            window.addEventListener('keyup', onKeyUp);
+            modelInput.addEventListener('change', handleFilesUpload);
+            animationInput.addEventListener('change', handleFilesUpload);
+            saveStateBtn.addEventListener('click', saveSceneState);
+            loadStateInput.addEventListener('change', loadSceneState);
+            document.getElementById('reset-state-btn').addEventListener('click', resetScene);
+            
+            document.getElementById('play-sequence-btn').addEventListener('click', playSequence);
+            document.getElementById('stop-sequence-btn').addEventListener('click', stopSequence);
+            
+            new Sortable(animationFileListContainer, {
+                animation: 150, handle: '.drag-handle', ghostClass: 'sortable-ghost',
+                onEnd: (evt) => {
+                    const item = animationFileNames.splice(evt.oldIndex, 1)[0];
+                    animationFileNames.splice(evt.newIndex, 0, item);
+                }
+            });
+            
+            document.getElementById('export-video-btn').addEventListener('click', () => {
+                videoPanel.classList.toggle('hidden');
+                if (!videoPanel.classList.contains('hidden')) {
+                   videoPanel.style.zIndex = ++highestZ;
+                }
+            });
+            document.getElementById('close-video-panel-btn').addEventListener('click', () => {
+                if (isRecording) stopRealtimeRecording(false);
+                videoPanel.classList.add('hidden');
+            });
+            document.getElementById('toggle-record-btn').addEventListener('click', toggleRecording);
+            document.getElementById('toggle-grid-btn').addEventListener('click', toggleGrid);
+            
+            // Dropdown Menus
+            const presetsBtn = document.getElementById('presets-dropdown-btn');
+            const presetsMenu = document.getElementById('presets-dropdown-menu');
+            presetsBtn.addEventListener('click', () => presetsMenu.classList.toggle('hidden'));
+
+            const hemBtn = document.getElementById('hem-dropdown-btn');
+            const hemMenu = document.getElementById('hem-dropdown-menu');
+            hemBtn.addEventListener('click', () => hemMenu.classList.toggle('hidden'));
+
+            const anahnuBtn = document.getElementById('anahnu-dropdown-btn');
+            const anahnuMenu = document.getElementById('anahnu-dropdown-menu');
+            anahnuBtn.addEventListener('click', () => anahnuMenu.classList.toggle('hidden'));
+            
+            document.addEventListener('click', (e) => {
+                if (!document.getElementById('presets-dropdown-container').contains(e.target)) presetsMenu.classList.add('hidden');
+                if (!document.getElementById('hem-dropdown-container').contains(e.target)) hemMenu.classList.add('hidden');
+                if (!document.getElementById('anahnu-dropdown-container').contains(e.target)) anahnuMenu.classList.add('hidden');
+            });
+
+            const presetAnimLinks = {
+                'load-walk-preset-btn': { url: 'https://raw.githubusercontent.com/orengamchi/avatari/main/Walk%20template.fbx', name: 'Walk Preset.fbx' },
+                'load-running-preset-btn': { url: 'https://raw.githubusercontent.com/orengamchi/avatari/main/Running.fbx', name: 'Running Preset.fbx' },
+                'load-thriller-idle-btn': { url: 'https://raw.githubusercontent.com/orengamchi/avatari/main/Thriller%20Idle.fbx', name: 'Thriller Idle.fbx' },
+                'load-thriller-1-btn': { url: 'https://raw.githubusercontent.com/orengamchi/avatari/main/Thriller%20Part%201.fbx', name: 'Thriller Part 1.fbx' },
+                'load-thriller-2-btn': { url: 'https://raw.githubusercontent.com/orengamchi/avatari/main/Thriller%20Part%202.fbx', name: 'Thriller Part 2.fbx' },
+                'load-thriller-3-btn': { url: 'https://raw.githubusercontent.com/orengamchi/avatari/main/Thriller%20Part%203.fbx', name: 'Thriller Part 3.fbx' },
+                'load-thriller-4-btn': { url: 'https://raw.githubusercontent.com/orengamchi/avatari/main/Thriller%20Part%204.fbx', name: 'Thriller Part 4.fbx' }
+            };
+            for (const [id, data] of Object.entries(presetAnimLinks)) {
+                document.getElementById(id).addEventListener('click', (e) => {
+                    e.preventDefault();
+                    showLoading(true, `טוען פריסט...`);
+                    loadAnimation({ name: data.name }, data.url);
+                    presetsMenu.classList.add('hidden');
+                });
+            }
+
+            const presetAnahnuModelLinks = {
+                'load-kiss-t-pose-btn': { url: 'https://raw.githubusercontent.com/orengamchi/avatari/main/kiss%20t.fbx', name: 'Kiss T-Pose.fbx' },
+                'load-tal-btn': { url: 'https://raw.githubusercontent.com/orengamchi/avatari/main/tal.fbx', name: 'Tal.fbx' },
+                'load-shani-btn': { url: 'https://raw.githubusercontent.com/orengamchi/avatari/main/shani%20t.fbx', name: 'Shani.fbx' },
+                'load-muli-btn': { url: 'https://raw.githubusercontent.com/orengamchi/avatari/main/muli%20t.fbx', name: 'Muli.fbx' },
+                'load-liat-btn': { url: 'https://raw.githubusercontent.com/orengamchi/avatari/main/liat%20t.fbx', name: 'Liat.fbx' },
+                'load-eran-btn': { url: 'https://raw.githubusercontent.com/orengamchi/avatari/main/eran%20t.fbx', name: 'Eran.fbx' },
+                'load-eli-btn': { url: 'https://raw.githubusercontent.com/orengamchi/avatari/main/eli%20t.fbx', name: 'Eli.fbx' },
+                'load-asi-btn': { url: 'https://raw.githubusercontent.com/orengamchi/avatari/main/asi%20%20t.fbx', name: 'Asi.fbx' },
+                'load-alma-btn': { url: 'https://raw.githubusercontent.com/orengamchi/avatari/main/alma%20t.fbx', name: 'Alma.fbx' }
+            };
+             for (const [id, data] of Object.entries(presetAnahnuModelLinks)) {
+                document.getElementById(id).addEventListener('click', (e) => {
+                    e.preventDefault();
+                    loadPresetModel(data.url, data.name);
+                    anahnuMenu.classList.add('hidden');
+                });
+            }
+            
+            const presetHemModelLinks = {
+                'load-deri-btn': { url: 'https://raw.githubusercontent.com/orengamchi/avatari/main/deri.fbx', name: 'Deri.fbx' },
+                'load-amsalem-btn': { url: 'https://raw.githubusercontent.com/orengamchi/avatari/main/amsalem.fbx', name: 'Amsalem.fbx' },
+                'load-yair-n-btn': { url: 'https://raw.githubusercontent.com/orengamchi/avatari/main/yair%20n.fbx', name: 'Yair N.fbx' }
+            };
+             for (const [id, data] of Object.entries(presetHemModelLinks)) {
+                document.getElementById(id).addEventListener('click', (e) => {
+                    e.preventDefault();
+                    loadPresetModel(data.url, data.name);
+                    hemMenu.classList.add('hidden');
+                });
+            }
+
+
+            makeDraggable(document.getElementById('models-panel'));
+            makeDraggable(document.getElementById('animations-panel'));
+            makeDraggable(videoPanel);
+        }
+        
+        function onTransform() {
+            if (!transformControls.dragging || !activeModel) return;
+
+             if (transformControls.mode === 'rotate') {
+                const euler = new THREE.Euler().setFromQuaternion(activeModel.object3D.quaternion, 'YXZ');
+                const degreesX = THREE.MathUtils.radToDeg(euler.x).toFixed(1);
+                const degreesY = THREE.MathUtils.radToDeg(euler.y).toFixed(1);
+                const degreesZ = THREE.MathUtils.radToDeg(euler.z).toFixed(1);
+                rotationDisplay.innerHTML = `X: ${degreesX}°<br>Y: ${degreesY}°<br>Z: ${degreesZ}°`;
+            }
+
+            if (selectedModels.size <= 1) return;
+
+            const initial = activeModel.object3D.userData.initial;
+            if (!initial) return;
+
+            const posDelta = activeModel.object3D.position.clone().sub(initial.position);
+            const quatDelta = activeModel.object3D.quaternion.clone().multiply(initial.quaternion.clone().invert());
+            const scaleVec = activeModel.object3D.scale.clone();
+            if (initial.scale.x === 0 || initial.scale.y === 0 || initial.scale.z === 0) return;
+            scaleVec.divide(initial.scale);
+
+
+            selectedModels.forEach(m => {
+                if (m !== activeModel) {
+                    const mInitial = m.object3D.userData.initial;
+                    if (!mInitial) return;
+
+                    m.object3D.position.copy(mInitial.position).add(posDelta);
+
+                    const relativePos = mInitial.position.clone().sub(initial.position);
+                    relativePos.applyQuaternion(quatDelta);
+                    m.object3D.position.copy(initial.position).add(relativePos);
+                    m.object3D.quaternion.copy(mInitial.quaternion).premultiply(quatDelta);
+
+                    const relativeScalePos = mInitial.position.clone().sub(initial.position);
+                    relativeScalePos.multiply(scaleVec);
+                    m.object3D.position.copy(initial.position).add(relativeScalePos);
+                    m.object3D.scale.copy(mInitial.scale).multiply(scaleVec);
+                }
+            });
+        }
+        
+        let highestZ = 12;
+        function makeDraggable(panel) {
+            const header = panel.querySelector('.panel-header');
+            if (!header) return;
+            let offsetX, offsetY, isDragging = false;
+
+            const startDrag = (e) => {
+                if (e.target.closest('button')) return;
+                isDragging = true;
+                panel.style.zIndex = ++highestZ;
+                const event = e.touches ? e.touches[0] : e;
+                offsetX = event.clientX - panel.offsetLeft;
+                offsetY = event.clientY - panel.offsetTop;
+                document.addEventListener('mousemove', onDrag);
+                document.addEventListener('mouseup', stopDrag);
+                document.addEventListener('touchmove', onDrag);
+                document.addEventListener('touchend', stopDrag);
+            };
+
+            const onDrag = (e) => {
+                if (!isDragging) return;
+                e.preventDefault();
+                const event = e.touches ? e.touches[0] : e;
+                let newX = event.clientX - offsetX;
+                let newY = event.clientY - offsetY;
+                panel.style.left = `${newX}px`;
+                panel.style.top = `${newY}px`;
+            };
+
+            const stopDrag = () => {
+                isDragging = false;
+                document.removeEventListener('mousemove', onDrag);
+                document.removeEventListener('mouseup', stopDrag);
+                document.removeEventListener('touchmove', onDrag);
+                document.removeEventListener('touchend', stopDrag);
+            };
+
+            header.addEventListener('mousedown', startDrag);
+            header.addEventListener('touchstart', startDrag);
+        }
+
+        function onKeyUp(event) {
+            if (event.key === 'Control') {
+                transformControls.setTranslationSnap(null);
+                transformControls.setRotationSnap(null);
+                transformControls.setScaleSnap(null);
+            }
+        }
+
+        function onKeyDown(event) {
+            if (event.target.tagName === 'INPUT' || event.target.tagName === 'TEXTAREA' || event.target.tagName === 'SELECT') return;
+
+            if (event.ctrlKey) {
+                transformControls.setRotationSnap(THREE.MathUtils.degToRad(5));
+            }
+
+            if (event.key === 'z' || event.key === 'Z') {
+                if (event.ctrlKey) {
+                    event.preventDefault();
+                    undoLastAction();
+                } else if (activeModel) {
+                    focusOnActiveModel();
+                }
+            }
+            
+            if (event.key === 'Delete' && selectedModels.size > 0) {
+                 deleteSelectedModels();
+            }
+        }
+        
+        function undoLastAction() {
+            if (historyStack.length === 0) {
+                showLoading(false, "אין פעולות לבטל.");
+                return;
+            }
+
+            const lastAction = historyStack.pop();
+            
+            lastAction.objects.forEach(state => {
+                const modelData = models.find(m => m.object3D.uuid === state.uuid);
+                if (modelData) {
+                    modelData.object3D.position.copy(state.before.position);
+                    modelData.object3D.quaternion.copy(state.before.quaternion);
+                    modelData.object3D.scale.copy(state.before.scale);
+                }
+            });
+
+            showLoading(false, "הפעולה האחרונה בוטלה.");
+        }
+
+        function onDoubleClick(event) {
+            const rect = container.getBoundingClientRect();
+            mouse.x = ((event.clientX - rect.left) / rect.width) * 2 - 1;
+            mouse.y = -((event.clientY - rect.top) / rect.height) * 2 + 1;
+            
+            raycaster.setFromCamera(mouse, camera);
+            
+            const intersects = raycaster.intersectObjects(models.map(m => m.object3D), true);
+
+            if (intersects.length > 0) {
+                let intersectedObject = intersects[0].object;
+                while (intersectedObject.parent && intersectedObject.parent !== scene) {
+                    intersectedObject = intersectedObject.parent;
+                }
+                const foundModel = models.find(m => m.object3D === intersectedObject);
+                if (foundModel) {
+                    selectModel(foundModel, event.shiftKey);
+                }
+            } else {
+                if (!event.shiftKey) {
+                    selectModel(null);
+                }
+            }
+        }
+        
+        function handleFilesUpload(event) {
+            const files = event.target.files;
+            if (!files.length) return;
+            const isModelUpload = event.target.id === 'model-input';
+            showLoading(true, `טוען ${files.length} קבצים...`);
+            for (const file of files) {
+                if (isModelUpload) loadModel(file);
+                else loadAnimation(file);
+            }
+            event.target.value = '';
+            setTimeout(() => showLoading(false), 1000);
+        }
+        
+        function loadDefaultModel() {
+            loadPresetModel('https://raw.githubusercontent.com/orengamchi/avatari/main/T-Pose%20oren.fbx', 'T-Pose oren.fbx');
+        }
+        
+        function loadPresetModel(url, fileName) {
+            showLoading(true, `טוען: ${fileName}...`);
+            const loader = new FBXLoader();
+            loader.load(url, (object) => {
+                loadModelFromObject(object, fileName);
+                showLoading(false);
+            }, undefined, (error) => {
+                console.error(`Error loading model ${fileName}:`, error);
+                showLoading(false, `שגיאה בטעינת המודל.`);
+            });
+        }
+
+
+        function loadModel(file) {
+            const objectURL = URL.createObjectURL(file);
+            const loader = file.name.toLowerCase().endsWith('.fbx') ? new FBXLoader() : new GLTFLoader();
+            loader.load(objectURL, (object) => {
+                const model = file.name.toLowerCase().endsWith('.fbx') ? object : object.scene;
+                loadModelFromObject(model, file.name);
+            }, undefined, error => console.error(`Error loading model ${file.name}:`, error));
+        }
+        
+        function loadModelFromObject(model, fileName) {
+            model.traverse(child => { if (child.isMesh) { child.castShadow = true; } });
+            const box = new THREE.Box3().setFromObject(model);
+            const size = box.getSize(new THREE.Vector3()).length();
+            const scaleFactor = 2.0 / (size || 1);
+            model.scale.setScalar(scaleFactor);
+            
+            model.position.set(0, -box.min.y * scaleFactor, 0);
+            scene.add(model);
+            const modelData = {
+                id: `model-${Date.now()}-${Math.random()}`,
+                name: fileName,
+                object3D: model,
+                mixer: new THREE.AnimationMixer(model),
+                currentAction: null,
+                activeAnimationName: null,
+                preGlobalAnimationName: null,
+                preSequenceAnimationName: null
+            };
+            models.push(modelData);
+            modelCounter++;
+            updateModelListUI();
+            selectModel(modelData, false);
+            frameModel(modelData);
+        }
+
+        function frameModel(modelData) {
+            if (!modelData) return;
+            const box = new THREE.Box3().setFromObject(modelData.object3D);
+            const center = box.getCenter(new THREE.Vector3());
+            const size = box.getSize(new THREE.Vector3());
+            const maxDim = Math.max(size.x, size.y, size.z);
+            const fov = camera.fov * (Math.PI / 180);
+            const cameraDistance = Math.abs(maxDim / 2 / Math.tan(fov / 2)) * 1.8;
+            
+            const newCameraPos = new THREE.Vector3(center.x, center.y + size.y * 0.2, center.z + cameraDistance);
+            
+            camera.position.copy(newCameraPos);
+            controls.target.copy(center);
+            controls.update();
+        }
+        
+        function loadAnimation(file, url) {
+            const fileUrl = url || URL.createObjectURL(file);
+            const fileName = file.name;
+
+            if (!animationFileNames.includes(fileName)) {
+                animationFileNames.push(fileName);
+            }
+            updateAnimationFileListUI();
+
+            const loader = fileName.toLowerCase().endsWith('.fbx') ? new FBXLoader() : new GLTFLoader();
+            loader.load(fileUrl, (object) => {
+                object.animations.forEach(clip => {
+                    const clipName = clip.name || `${fileName}-${animations.size}`;
+                    animations.set(clipName, { clip: clip, sourceFile: fileName });
+                });
+                showLoading(false, `אנימציה "${fileName}" נטענה`);
+                
+                if(selectedModels.size > 0) {
+                    playFirstAnimationFromFile(fileName);
+                }
+
+            }, undefined, (error) => {
+                console.error(`Error loading animation ${fileName}:`, error);
+                showLoading(false, `שגיאה בטעינת האנימציה`);
+            });
+        }
+
+
+        function updateModelListUI() {
+            modelListContainer.innerHTML = models.length === 0 ? `<p class="text-gray-400 text-sm px-2">עדיין לא נטענו מודלים.</p>` : '';
+            models.forEach(modelData => {
+                const item = document.createElement('div');
+                item.className = 'model-list-item p-2 rounded-md cursor-pointer transition-colors bg-gray-600 hover:bg-cyan-700 text-white truncate text-sm flex items-center justify-between';
+                
+                const nameSpan = document.createElement('span');
+                nameSpan.className = 'flex-grow';
+                nameSpan.textContent = modelData.name;
+                
+                const visibilityBtn = document.createElement('button');
+                visibilityBtn.className = 'visibility-toggle opacity-0 p-1 rounded-full hover:bg-gray-500 transition-opacity';
+                visibilityBtn.title = 'הסתר/הצג';
+                visibilityBtn.innerHTML = modelData.object3D.visible 
+                    ? `<svg xmlns="http://www.w3.org/2000/svg" class="h-4 w-4" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M15 12a3 3 0 11-6 0 3 3 0 016 0z" /><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M2.458 12C3.732 7.943 7.523 5 12 5c4.478 0 8.268 2.943 9.542 7-1.274 4.057-5.064 7-9.542 7-4.477 0-8.268-2.943-9.542-7z" /></svg>`
+                    : `<svg xmlns="http://www.w3.org/2000/svg" class="h-4 w-4 text-gray-500" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M13.875 18.825A10.05 10.05 0 0112 19c-4.478 0-8.268-2.943-9.542-7 .946-3.11 3.52-5.448 6.84-6.192M15 12a3 3 0 11-6 0 3 3 0 016 0z" /><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M17.582 17.582A10.016 10.016 0 0112 19c-4.478 0-8.268-2.943-9.542-7a16.63 16.63 0 013.34-4.524M9.879 9.879A3 3 0 1012 12M12 12a3 3 0 00-3-3m6 3a3 3 0 00-3-3m-1.42 1.42A3.014 3.014 0 0112 12m0 0a3.014 3.014 0 01-1.42-3.58m3.58-1.42a3.014 3.014 0 010 4.998M3 3l18 18" /></svg>`;
+                
+                if (!modelData.object3D.visible) {
+                    item.classList.add('text-gray-500');
+                }
+
+                item.dataset.modelId = modelData.id;
+                item.onclick = (event) => selectModel(modelData, event.shiftKey);
+                item.ondblclick = () => {
+                    selectModel(modelData, false);
+                    if (animations.size > 0) {
+                        const firstAnimationName = animations.keys().next().value;
+                        applyAnimation(firstAnimationName);
+                    } else {
+                        showLoading(false, 'אין אנימציה זמינה להפעלה.');
+                    }
+                };
+
+                visibilityBtn.onclick = (e) => {
+                    e.stopPropagation();
+                    toggleModelVisibility(modelData);
+                };
+
+                item.appendChild(nameSpan);
+                item.appendChild(visibilityBtn);
+                modelListContainer.appendChild(item);
+            });
+            highlightSelectedModelUI();
+        }
+        
+        function toggleModelVisibility(modelData) {
+            modelData.object3D.visible = !modelData.object3D.visible;
+            if (!modelData.object3D.visible && selectedModels.has(modelData)) {
+                selectModel(modelData, true); // This will toggle it off
+            }
+            updateModelListUI();
+        }
+
+        function updateAnimationFileListUI() {
+            animationFileListContainer.innerHTML = animationFileNames.length === 0 ? `<p class="text-gray-400 text-sm px-2">טען קבצי אנימציה.</p>` : '';
+            if (animationFileNames.length === 0) return;
+            
+            animationFileNames.forEach(name => {
+                const item = document.createElement('div');
+                item.className = `anim-list-item w-full text-right p-2 rounded-md transition-colors text-white truncate text-sm mt-1 flex items-center justify-between ${activeAnimationFile === name ? 'bg-green-600' : 'bg-gray-600 hover:bg-green-700'}`;
+                item.innerHTML = `
+                    <div class="flex items-center flex-grow">
+                        <span class="drag-handle pr-2 text-gray-400">⠿</span>
+                        <span class="flex-grow cursor-pointer">${name}</span>
+                    </div>
+                    <button class="delete-btn text-red-400 hover:text-red-600 font-bold opacity-0 transition-opacity text-lg leading-none px-2" data-filename="${name}">&times;</button>
+                `;
+                const textSpan = item.querySelector('.flex-grow');
+                textSpan.onclick = () => setActiveAnimationFile(name);
+                textSpan.ondblclick = () => {
+                    setActiveAnimationFile(name);
+                    playFirstAnimationFromFile(name);
+                };
+                
+                const deleteBtn = item.querySelector('.delete-btn');
+                deleteBtn.onclick = (e) => {
+                    e.stopPropagation();
+                    deleteAnimationFile(name);
+                };
+                animationFileListContainer.appendChild(item);
+            });
+        }
+        
+        function deleteAnimationFile(fileNameToDelete) {
+            if (isSequencePlaying) stopSequence();
+            
+            const fileIndex = animationFileNames.indexOf(fileNameToDelete);
+            if (fileIndex > -1) {
+                animationFileNames.splice(fileIndex, 1);
+            }
+
+            const clipsToDelete = [];
+            for (const [name, data] of animations.entries()) {
+                if (data.sourceFile === fileNameToDelete) {
+                    clipsToDelete.push(name);
+                }
+            }
+            clipsToDelete.forEach(clipName => animations.delete(clipName));
+
+            models.forEach(model => {
+                if (clipsToDelete.includes(model.activeAnimationName)) {
+                    if(model.currentAction) model.currentAction.stop();
+                    model.currentAction = null;
+                    model.activeAnimationName = null;
+                }
+                if (clipsToDelete.includes(model.preGlobalAnimationName)) model.preGlobalAnimationName = null;
+                if (clipsToDelete.includes(model.preSequenceAnimationName)) model.preSequenceAnimationName = null;
+            });
+
+            if (activeAnimationFile === fileNameToDelete) activeAnimationFile = null;
+            
+            updateAnimationFileListUI();
+            if (activeModel) {
+                updateAnimationUI();
+            }
+            showLoading(false, `האנימציה "${fileNameToDelete}" נמחקה.`);
+        }
+        
+        function setActiveAnimationFile(fileName) {
+            activeAnimationFile = fileName;
+            updateAnimationFileListUI();
+        }
+
+        function selectModel(modelData, isMultiSelect = false) {
+            if (modelData === null) {
+                selectedModels.clear();
+            } else {
+                if (!isMultiSelect) {
+                    selectedModels.clear();
+                    selectedModels.add(modelData);
+                } else {
+                    if (selectedModels.has(modelData)) {
+                        selectedModels.delete(modelData);
+                    } else {
+                        selectedModels.add(modelData);
+                    }
+                }
+            }
+
+            if (selectedModels.has(modelData)) {
+                activeModel = modelData;
+            } else {
+                activeModel = selectedModels.values().next().value || null;
+            }
+            
+            highlightSelectedModelUI();
+
+            if (activeModel) {
+                transformControls.attach(activeModel.object3D);
+                selectionControlsUI.classList.remove('hidden');
+            } else {
+                transformControls.detach();
+                selectionControlsUI.classList.add('hidden');
+            }
+            updateAnimationUI();
+        }
+        
+        function deleteSelectedModels() {
+            if (selectedModels.size === 0) return;
+            transformControls.detach();
+
+            selectedModels.forEach(modelToDelete => {
+                scene.remove(modelToDelete.object3D);
+                modelToDelete.object3D.traverse(object => {
+                    if (object.isMesh) {
+                        if (object.geometry) object.geometry.dispose();
+                        if (object.material) (Array.isArray(object.material) ? object.material : [object.material]).forEach(m => m.dispose());
+                    }
+                });
+                const modelIndex = models.findIndex(m => m.id === modelToDelete.id);
+                if (modelIndex > -1) models.splice(modelIndex, 1);
+            });
+            
+            showLoading(false, `${selectedModels.size} מודלים נמחקו.`);
+            selectModel(null);
+            updateModelListUI();
+        }
+
+        function focusOnActiveModel() {
+            frameModel(activeModel);
+        }
+
+        function setTransformMode(mode) {
+            transformControls.setMode(mode);
+            document.querySelectorAll('.transform-mode-btn').forEach(btn => {
+                btn.classList.remove('bg-yellow-600');
+                btn.classList.add('bg-gray-700', 'hover:bg-yellow-800');
+            });
+            document.getElementById(`${mode}-btn`).classList.add('bg-yellow-600');
+            document.getElementById(`${mode}-btn`).classList.remove('bg-gray-700', 'hover:bg-yellow-800');
+        }
+
+        function highlightSelectedModelUI() {
+            document.querySelectorAll('.model-list-item').forEach(item => {
+                const modelInList = models.find(m => m.id === item.dataset.modelId);
+                const isSelected = selectedModels.has(modelInList);
+                item.classList.toggle('bg-cyan-700', isSelected);
+                item.classList.toggle('bg-gray-600', !isSelected);
+                
+                const isActive = activeModel && item.dataset.modelId === activeModel.id;
+                item.classList.toggle('ring-2', isActive);
+                item.classList.toggle('ring-yellow-400', isActive);
+            });
+        }
+        
+        function updateAnimationUI() {
+            const span = document.getElementById('current-anim-name');
+            if (activeModel && activeModel.activeAnimationName) {
+                const animName = activeModel.activeAnimationName;
+                const animData = animations.get(animName);
+                const sourceFile = animData ? animData.sourceFile : '';
+                const cleanName = animName.replace(sourceFile, '').replace(/[^a-zA-Z0-9]/g, ' ').trim();
+                span.textContent = cleanName || animName;
+                span.title = `קובץ: ${sourceFile}\nקליפ: ${animName}`;
+            } else {
+                span.textContent = 'אין אנימציה';
+                span.title = 'אין אנימציה';
+            }
+        }
+
+        function skipAnimation(direction) {
+            if (selectedModels.size === 0) return showLoading(false, 'יש לבחור מודל תחילה.');
+            
+            const animNames = Array.from(animations.keys());
+            if (animNames.length === 0) return showLoading(false, 'אין אנימציות טעונות.');
+
+            const currentAnimationName = activeModel ? activeModel.activeAnimationName : null;
+            let currentIndex = animNames.indexOf(currentAnimationName);
+            if (currentIndex === -1) currentIndex = direction > 0 ? -1 : 0;
+            
+            const newIndex = (currentIndex + direction + animNames.length) % animNames.length;
+            const newAnimationName = animNames[newIndex];
+            applyAnimation(newAnimationName);
+        }
+
+        function playFirstAnimationFromFile(fileName) {
+            if (selectedModels.size === 0) return showLoading(false, 'יש לבחור מודל להחלת האנימציה.');
+
+            let firstAnimationName = null;
+            for (const [name, data] of animations.entries()) {
+                if (data.sourceFile === fileName) {
+                    firstAnimationName = name;
+                    break;
+                }
+            }
+            if (firstAnimationName) {
+                applyAnimation(firstAnimationName);
+            } else {
+                showLoading(false, 'לא נמצאו אנימציות בקובץ זה.');
+            }
+        }
+        
+        function applyAnimation(animationName, loopMode = THREE.LoopRepeat) {
+            if (selectedModels.size === 0) return showLoading(false, 'יש לבחור מודל תחילה.');
+            
+            selectedModels.forEach(model => _applyAnimationToSingleModel(animationName, model, loopMode));
+        }
+
+        function _applyAnimationToSingleModel(animationName, modelToAnimate, loopMode) {
+            if (isSequencePlaying && loopMode === THREE.LoopRepeat) {
+                stopSequence();
+            }
+            
+            const animData = animations.get(animationName);
+            if (!animData) return;
+            
+            setActiveAnimationFile(animData.sourceFile);
+
+            const clip = animData.clip;
+            const mixer = modelToAnimate.mixer;
+            
+            clip.loop = loopMode;
+            
+            const oldAction = modelToAnimate.currentAction;
+            const newAction = mixer.clipAction(clip);
+            if (oldAction && oldAction !== newAction) {
+                oldAction.fadeOut(0.5);
+            }
+            newAction.stop().reset().fadeIn(0.5).play();
+            modelToAnimate.currentAction = newAction;
+            
+            if (loopMode === THREE.LoopRepeat) {
+                 modelToAnimate.activeAnimationName = animationName;
+            }
+            
+            if (modelToAnimate === activeModel) {
+                updateAnimationUI();
+            }
+        }
+        
+        function playSequence() {
+            if (selectedModels.size === 0) return showLoading(false, 'יש לבחור מודל להפעלת הרצף.');
+            if (isSequencePlaying) return;
+
+            isSequencePlaying = true;
+            
+            document.getElementById('play-sequence-btn').classList.add('hidden');
+            document.getElementById('stop-sequence-btn').classList.remove('hidden');
+            showLoading(false, `מפעיל רצף...`);
+
+            selectedModels.forEach(model => {
+                const sequenceData = {
+                    target: model,
+                    queue: [],
+                    currentIndex: 0,
+                    preSequenceAnimationName: model.activeAnimationName
+                };
+
+                animationFileNames.forEach(fileName => {
+                    for (const [name, data] of animations.entries()) {
+                        if (data.sourceFile === fileName) {
+                            sequenceData.queue.push(name);
+                            break;
+                        }
+                    }
+                });
+                
+                if (sequenceData.queue.length > 0) {
+                    playNextInSequenceForModel(sequenceData);
+                }
+            });
+        }
+        
+        function playNextInSequenceForModel(sequenceData) {
+            if (!isSequencePlaying || !sequenceData.target || sequenceData.currentIndex >= sequenceData.queue.length) {
+                 if (isSequencePlaying) { // if the whole sequence is still playing, loop for this model
+                    sequenceData.currentIndex = 0;
+                    playNextInSequenceForModel(sequenceData);
+                }
+                return;
+            }
+            
+            const animationName = sequenceData.queue[sequenceData.currentIndex];
+            _applyAnimationToSingleModel(animationName, sequenceData.target, THREE.LoopOnce);
+
+            const action = sequenceData.target.currentAction;
+            if (action) {
+                const onAnimationFinish = (e) => {
+                    if (e.action === action) {
+                        sequenceData.target.mixer.removeEventListener('finished', onAnimationFinish);
+                        if (isSequencePlaying) {
+                            sequenceData.currentIndex++;
+                            playNextInSequenceForModel(sequenceData);
+                        }
+                    }
+                };
+                sequenceData.target.mixer.addEventListener('finished', onAnimationFinish);
+            } else {
+                 sequenceData.currentIndex++;
+                 setTimeout(() => playNextInSequenceForModel(sequenceData), 100);
+            }
+        }
+
+        function stopSequence(finishedNaturally = false) {
+            if (!isSequencePlaying) return;
+            isSequencePlaying = false; 
+
+            selectedModels.forEach(model => {
+                if (model.currentAction) model.currentAction.fadeOut(0.5);
+                const originalAnimation = model.preSequenceAnimationName;
+                if (originalAnimation) {
+                   setTimeout(() => {
+                        if (!isSequencePlaying) { // Check again in case a new sequence started
+                            _applyAnimationToSingleModel(originalAnimation, model, THREE.LoopRepeat);
+                        }
+                   }, 500);
+                }
+                model.preSequenceAnimationName = null;
+            });
+            
+            document.getElementById('play-sequence-btn').classList.remove('hidden');
+            document.getElementById('stop-sequence-btn').classList.add('hidden');
+            showLoading(false, 'הרצף נעצר.');
+        }
+
+        function resetScene() {
+            showLoading(true, "מאפס את הסצנה...");
+
+            // Stop any ongoing playback
+            if (isSequencePlaying) stopSequence();
+            
+            // Clear selections and controls
+            transformControls.detach();
+            selectedModels.clear();
+            activeModel = null;
+            
+            // Remove all models from the scene and memory
+            while(models.length > 0) {
+                const modelData = models.pop();
+                scene.remove(modelData.object3D);
+                modelData.object3D.traverse(object => {
+                    if (object.isMesh) {
+                        if (object.geometry) object.geometry.dispose();
+                        if (object.material) (Array.isArray(object.material) ? object.material : [object.material]).forEach(m => m.dispose());
+                    }
+                });
+            }
+            
+            // Clear animations
+            animations.clear();
+            animationFileNames.length = 0;
+
+            // Reset UI
+            updateModelListUI();
+            updateAnimationFileListUI();
+            selectionControlsUI.classList.add('hidden');
+            
+            // Reload default model
+            setTimeout(() => {
+                loadDefaultModel();
+                 showLoading(false, "הסצנה אופסה.");
+            }, 100);
+        }
+
+        function saveSceneState() {
+            const sceneState = {
+                models: models.map(modelData => ({
+                    name: modelData.name,
+                    position: modelData.object3D.position.toArray(),
+                    rotation: modelData.object3D.rotation.toArray(),
+                    scale: modelData.object3D.scale.toArray(),
+                    activeAnimation: modelData.activeAnimationName,
+                })),
+                loadedAnimationFiles: animationFileNames
+            };
+            const jsonString = JSON.stringify(sceneState, null, 2);
+            const blob = new Blob([jsonString], { type: 'application/json' });
+            const url = URL.createObjectURL(blob);
+            const a = document.createElement('a');
+            a.href = url;
+            a.download = 'scene_state.json';
+            a.click();
+            URL.revokeObjectURL(url);
+            a.remove();
+            showLoading(false, 'מצב הסצנה נשמר.');
+        }
+
+        function loadSceneState(event) {
+            const file = event.target.files[0];
+            if (!file) return;
+            const reader = new FileReader();
+            reader.onload = (e) => {
+                try {
+                    const state = JSON.parse(e.target.result);
+                    applySceneState(state);
+                } catch (error) {
+                    console.error("Error parsing scene state file:", error);
+                    showLoading(false, "שגיאה: קובץ המצב אינו תקין.");
+                }
+            };
+            reader.readAsText(file);
+            event.target.value = '';
+        }
+
+        function applySceneState(state) {
+            showLoading(true, "טוען מצב שמור...");
+            let modelsFound = 0;
+            state.models.forEach(savedModel => {
+                const targetModel = models.find(m => m.name === savedModel.name);
+                if (targetModel) {
+                    modelsFound++;
+                    targetModel.object3D.position.fromArray(savedModel.position);
+                    targetModel.object3D.rotation.fromArray(savedModel.rotation);
+                    targetModel.object3D.scale.fromArray(savedModel.scale);
+                    if (savedModel.activeAnimation && animations.has(savedModel.activeAnimation)) {
+                        _applyAnimationToSingleModel(savedModel.activeAnimation, targetModel);
+                    }
+                }
+            });
+            if (modelsFound < state.models.length) {
+                showLoading(false, `מצב נטען חלקית. ${modelsFound}/${state.models.length} מודלים נמצאו.`);
+            } else {
+                showLoading(false, "מצב הסצנה נטען בהצלחה.");
+            }
+        }
+        
+        function showLoading(isLoading, message = '') {
+            statusMessage.innerText = message;
+            loadingText.innerText = message;
+            loadingOverlay.classList.toggle('hidden', !isLoading);
+            loadingOverlay.classList.toggle('flex', isLoading);
+        }
+        
+        function onWindowResize() {
+            camera.aspect = container.clientWidth / container.clientHeight;
+            camera.updateProjectionMatrix();
+            renderer.setSize(container.clientWidth, container.clientHeight);
+        }
+
+        function toggleGrid() {
+            gridPlane.visible = !gridPlane.visible;
+        }
+
+        function changeBackgroundColor(event) {
+            scene.background.set(event.target.value);
+        }
+
+        function toggleRecording() {
+            if (isRecording) {
+                stopRealtimeRecording();
+            } else {
+                startRealtimeRecording();
+            }
+        }
+
+        function startRealtimeRecording() {
+            isRecording = true;
+            recordedChunks = [];
+            const stream = renderer.domElement.captureStream(60);
+            
+            const mimeType = document.getElementById('video-format').value;
+            const bitrate = parseInt(document.getElementById('video-bitrate').value);
+            const options = { 
+                mimeType,
+                videoBitsPerSecond: bitrate
+            };
+            
+            if (!MediaRecorder.isTypeSupported(options.mimeType)) {
+                showLoading(false, `שגיאה: פורמט ${options.mimeType} אינו נתמך.`);
+                isRecording = false;
+                return;
+            }
+
+            mediaRecorder = new MediaRecorder(stream, options);
+
+            mediaRecorder.ondataavailable = (event) => {
+                if (event.data.size > 0) recordedChunks.push(event.data);
+            };
+
+            mediaRecorder.onstop = () => {
+                if (recordedChunks.length > 0) {
+                    const blob = new Blob(recordedChunks, { type: mimeType });
+                    const url = URL.createObjectURL(blob);
+                    const a = document.createElement('a');
+                    a.href = url;
+                    a.download = `AVATARi-capture-${Date.now()}.webm`;
+                    a.click();
+                    URL.revokeObjectURL(url);
+                    a.remove();
+                    showLoading(false, 'הייצוא הסתיים.');
+                }
+                stream.getTracks().forEach(track => track.stop());
+            };
+
+            mediaRecorder.start();
+
+            const recordBtn = document.getElementById('toggle-record-btn');
+            recordBtn.textContent = 'עצור הקלטה';
+            recordBtn.classList.replace('bg-red-600', 'bg-blue-600');
+            recordBtn.classList.replace('hover:bg-red-700', 'hover:bg-blue-700');
+            document.getElementById('modal-title').textContent = "מקליט...";
+            document.getElementById('modal-recording-indicator').classList.remove('hidden');
+            statusMessage.innerText = 'הקלטה פעילה...';
+        }
+
+        function stopRealtimeRecording(saveFile = true) {
+            if (!mediaRecorder || mediaRecorder.state !== 'recording') return;
+            
+            if (!saveFile) recordedChunks = [];
+            
+            mediaRecorder.stop();
+            isRecording = false;
+
+            const recordBtn = document.getElementById('toggle-record-btn');
+            recordBtn.textContent = 'התחל הקלטה';
+            recordBtn.classList.replace('bg-blue-600', 'bg-red-600');
+            recordBtn.classList.replace('hover:bg-blue-700', 'hover:bg-red-700');
+            document.getElementById('modal-title').textContent = "ייצוא וידאו";
+            document.getElementById('modal-recording-indicator').classList.add('hidden');
+            statusMessage.innerText = '';
+        }
+        
+        function toScreenPosition(obj, camera) {
+            const vector = new THREE.Vector3();
+            const rect = renderer.domElement.getBoundingClientRect();
+
+            obj.getWorldPosition(vector);
+            vector.project(camera);
+
+            vector.x = (vector.x * 0.5 + 0.5) * rect.width + rect.left;
+            vector.y = (vector.y * -0.5 + 0.5) * rect.height + rect.top;
+
+            return { x: vector.x, y: vector.y };
+        }
+
+        function animate() {
+            requestAnimationFrame(animate);
+            const delta = clock.getDelta();
+            
+            if (gridPlane.visible) {
+                gridPlane.material.uniforms.uTime.value = clock.getElapsedTime();
+            }
+
+            models.forEach(m => m.mixer.update(delta));
+
+            if (!rotationDisplay.classList.contains('hidden') && activeModel) {
+                const screenPosition = toScreenPosition(activeModel.object3D, camera);
+                rotationDisplay.style.left = `${screenPosition.x}px`;
+                rotationDisplay.style.top = `${screenPosition.y}px`;
+            }
+
+            controls.update();
+            renderer.render(scene, camera);
+        }
+        
+        init();
+    </script>
+</body>
+</html>
+
